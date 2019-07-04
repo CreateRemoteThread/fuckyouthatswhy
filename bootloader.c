@@ -36,16 +36,6 @@ void setAddressBus(long int addr)
 	PORTA = addr & 0xFF;
 }
 
-void setDataBus(char data)
-{
-		
-}
-
-void readDataBus(char data)
-{
-	
-}
-
 #define ASSERT_MREQ_LOW PORTD &= ~(1 << PORTD7)
 #define ASSERT_MREQ_HIGH PORTD |= (1 << PORTD7)
 #define ASSERT_WRITE_LOW PORTD &= ~(1 << PORTD5)
@@ -83,75 +73,111 @@ int main(void)
 	// PORTC is HIGH address
 	
 	ASSERT_RESET_LOW;
-	ASSERT_CLK_HIGH;
+	ASSERT_CLK_LOW;
 	
 	uart_init ();
 	FILE mystdio = FDEV_SETUP_STREAM(uart_transmit, uart_receive, _FDEV_SETUP_RW);
 	stdout = &mystdio;
 	stdin = &mystdio;
 	
-		ASSERT_DATABUS_OUTPUT;
-		ASSERT_WRITE_LOW;
-		setAddressBus(0x0000);
-		PORTB = 0x41;
+	int i = 0;
+	printf("Boot OK, flashing virtual EEPROM...\n");
+	ASSERT_DATABUS_OUTPUT;
+	ASSERT_WRITE_LOW;
+	for(i = 0;i < 0xFF;i++)
+	{
+		setAddressBus(i);
+		PORTB = 0x0;
 		ASSERT_MREQ_LOW;
-		_delay_ms(50);
+		_delay_ms(5);
 		ASSERT_MREQ_HIGH;
-		
-		setAddressBus(0xFF00);
-		PORTB = 0x42;
+		_delay_ms(5);
+	}
+	ASSERT_WRITE_HIGH;
+	printf("Verifying virtual EEPROM...\n");
+	ASSERT_DATABUS_INPUT;
+	ASSERT_READ_LOW;
+	unsigned char dataCheck;
+	for(i = 0;i < 0xFF;i++)
+	{
+		setAddressBus(i);
 		ASSERT_MREQ_LOW;
-		_delay_ms(50);
+		_delay_ms(5);
+		dataCheck = PINB;
+		if(dataCheck != 0x00)
+		{
+			printf("ERR: addr %d byte %d\r\n",i,dataCheck);
+		}
 		ASSERT_MREQ_HIGH;
-		ASSERT_WRITE_HIGH;
-		_delay_ms(50);
-		
-		ASSERT_DATABUS_INPUT;
-		ASSERT_READ_LOW;
-		setAddressBus(0xFF00);
-		ASSERT_MREQ_LOW;
-		_delay_ms(50);
-		unsigned char a = PINB;
-		ASSERT_MREQ_HIGH;
-		setAddressBus(0x0000);
-		ASSERT_MREQ_LOW;
-		_delay_ms(50);
-		unsigned char b = PINB;
-		ASSERT_MREQ_HIGH;
-		ASSERT_READ_HIGH;
+		_delay_ms(5);
+	}
+	ASSERT_READ_HIGH;
+	
+	setAddressBus(0);
+	PORTB = 0;
 	
 	printf("Releasing pin control\r\n");
+	// all with pullups. source: https://cdn.hackaday.io/files/19000812896000/S221116_R100218_Z80.ino
 	DDRC = (1 << PORTC7);   // leave C7 for interrupt
+	PORTC = ~(1 << PORTC7);
 	DDRA = 0x0;
+	PORTA = 0xFF;
 	DDRB = 0x0;
+	PORTB = 0xFF;
 	
 	DDRD &= ~(1 << PORTD4); // READ
 	DDRD &= ~(1 << PORTD5); // WRITE
 	DDRD &= ~(1 << PORTD7); // MREQ
 	DDRD &= ~(1 << PORTD6); // IORQ
+	PORTD |= (1 << PORTD4) | (1 << PORTD5) | (1 << PORTD7) | (1 << PORTD6);
 	
-	_delay_ms(5000);
+	_delay_ms(500);
 	
 	printf("Pulsing reset\r\n");
-	ASSERT_RESET_HIGH;
-	_delay_ms(100);
+	ASSERT_INT_HIGH;
 	ASSERT_RESET_LOW;
+	unsigned char addrBusLow = 0;
+	unsigned char addrBusHigh = 0;
+	unsigned char dataBus = 0;
+	unsigned char dataPin = 0;
+	
 	printf("Generating 4 clock cycles\r\n");
-	int i = 0;
-	for(i = 0;i < 4; i++)
+	for(i = 0;i < 3; i++)
 	{
-		ASSERT_CLK_LOW;
-		_delay_ms(200);
 		ASSERT_CLK_HIGH;
-		_delay_ms(200);
+		_delay_ms(50);
+		dataPin = PIND & (1 << PORTD7);
+		addrBusLow = PINA;
+		addrBusHigh = PINC & 0x7F;
+		dataBus = PINB;
+		printf("%d %d %d : %d\r\n",dataPin,addrBusHigh,addrBusLow,dataBus);
+		ASSERT_CLK_LOW;
+		dataPin = PIND & (1 << PORTD7);
+		addrBusLow = PINA;
+		addrBusHigh = PINC & 0x7F;
+		dataBus = PINB;
+		printf("%d %d %d : %d\r\n",dataPin,addrBusHigh,addrBusLow,dataBus);
+		_delay_ms(50);
 	}
 	ASSERT_RESET_HIGH;
+	printf("It's alive!\r\n");
+
 	while(1)
 	{
 		ASSERT_CLK_HIGH;
-		_delay_ms(100);
-		ASSERT_CLK_LOW;	
-		_delay_ms(100);		
+		_delay_ms(50);
+		dataPin = PIND & (1 << PORTD7);
+		addrBusLow = PINA;
+		addrBusHigh = PINC & 0x7F;
+		dataBus = PINB;
+		printf("%d %d %d : %d\r\n",dataPin,addrBusHigh,addrBusLow,dataBus);
+		ASSERT_CLK_LOW;
+		dataPin = PIND & (1 << PORTD7);
+		addrBusLow = PINA;
+		addrBusHigh = PINC & 0x7F;
+		dataBus = PINB;
+		printf("%d %d %d : %d\r\n",dataPin,addrBusHigh,addrBusLow,dataBus);
+		_delay_ms(50);
 	}
 }
 
