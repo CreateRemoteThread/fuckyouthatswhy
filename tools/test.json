@@ -1,0 +1,13 @@
+{
+  "data":
+[
+  {
+    "fn":"../test/bootcode.bin",
+    "load":0
+  },
+  {
+    "fn":"../test/ivr.bin",
+    "load":256
+  }
+]
+}
