@@ -39,11 +39,12 @@ wboote: jp wboot    ;  1 Warm boot
 
 ; Disk Parameter Headers -------------------------------------------------------
 
-dpbase:	dw 0,0,0,0,dirbuf,dpb,0,alv0
-	dw 0,0,0,0,dirbuf,dpb,0,alv1
-	dw 0,0,0,0,dirbuf,dpb,0,alv2
+dpbase:	dw 0,0,0,0,0e700h,dpb,0,alv0
+	dw 0,0,0,0,0e700h,dpb,0,alv1
+	dw 0,0,0,0,0e700h,dpb,0,alv2
 
-dpb:	dw 26  ; SPT - sectors per track
+dpb:
+  dw 26  ; SPT - sectors per track
 	db 3   ; BSH - block shift factor
 	db 7   ; BLM - block mask
 	db 0   ; EXM - Extent mask
@@ -75,8 +76,8 @@ wboot:	di
   ld a,1
   out ($FF),a
 
-  // cpm2
-
+  ; cpm2
+  jr gocpm
 	xor a
   ld b,44                 ; read CCP + BDOS into memory
   ld de,1                 ; skip first sector on first track
@@ -204,9 +205,6 @@ punch:
 
 ; Data area --------------------------------------------------------------------
 
-dirbuf: db '64k CP/M vers 2.2',13,10,0
-        ds dirbuf+128-$ ; scratch directory area
-
 sekdsk: ds 0
 sektrk: ds 1
 seksec: ds 1
@@ -216,9 +214,9 @@ alv0:   ds 32  ; allocation vector 0 (max 255 blocks)
 alv1:   ds 32  ; allocation vector 1 (max 255 blocks)
 alv2:   ds 32  ; allocation vector 2 (max 255 blocks)
 
-spare:  equ BEND-$
-        ds spare                ; BIOS base page and version number
-        dw BIOS + VERS          ; ... at end of memory
+;spare:  equ BEND-$
+;        ds spare                ; BIOS base page and version number
+;        dw BIOS + VERS          ; ... at end of memory
 
 ; ------------------------------------------------------------------------------
 

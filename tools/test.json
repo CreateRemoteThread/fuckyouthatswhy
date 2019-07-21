@@ -2,12 +2,12 @@
   "data":
 [
   {
-    "fn":"../test/bootcode.bin",
+    "fn":"../bdos22.com",
     "load":0
   },
   {
-    "fn":"../test/ivr.bin",
-    "load":256
+    "fn":"../bios2.com",
+    "load":5632
   }
 ]
 }

@@ -1,2 +1,5 @@
+tools/out.bin
+tools/out.array
+
 *.hex
 *.bin
