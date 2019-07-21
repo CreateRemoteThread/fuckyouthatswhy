@@ -110,6 +110,7 @@ conin:
 	ret
 
 conout:	
+  ld a, c
   out ($81),A         ; Output the character
   ret
 
