@@ -11,11 +11,11 @@
 #define BAUD_PRESCALER ((F_CPU)/(BAUDRATE * 16UL) - 1) // set baud rate value for UBRR
 
 #define LADDR_LOW  0x00
-#define LADDR_HIGH 0xE8
+#define LADDR_HIGH 0x00
 #define LLEN_LOW   0x00
-#define LLEN_HIGH  0x18
+#define LLEN_HIGH  0x20
 #define JMP_LOW    0x00
-#define JMP_HIGH   0xFE
+#define JMP_HIGH   0x00
 // CP/M Bootloader
 const unsigned char tiny_bl[] PROGMEM = {0xf3,0xc3,0x04,0x00,0x21,0x00,0x00,0x11,0x00,0x40,0x01,0x24,0x00,0xed,0xb0,0xc3,0x12,0x40,0x21,LADDR_LOW,LADDR_HIGH,0x01,LLEN_LOW,LLEN_HIGH,0xdb,0xff,0x77,0x23,0x0b,0x78,0xb1,0x20,0xf7,0xc3,JMP_LOW,JMP_HIGH};
 long int bl_ctr = 0;
@@ -176,7 +176,8 @@ void ioreqRead(int address)
 	switch(address)
 	{
 		case 0x80:
-			
+			dataBus = 0xFF;
+			/*
 			if(receivedFlag == 0)
 			{
 				dataBus = 0xFF;
@@ -185,6 +186,7 @@ void ioreqRead(int address)
 			{
 				dataBus = 0x00;
 			}
+			*/
 			break;
 		case 0x81:
 			while(receivedFlag == 0)
