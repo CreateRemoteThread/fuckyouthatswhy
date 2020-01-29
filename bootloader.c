@@ -45,10 +45,10 @@ unsigned char uart_receive(void){
 	return UDR;
 }
 
-void setAddressBus(long int addr)
+void setAddressBus(unsigned char addr)
 {
-	PORTC = (addr >> 8) & 0b111;
-	PORTA = addr & 0xFF;
+	PORTA = addr;
+	/*
 	if((addr >> 8 & 0b111) != (addr >> 8))
 	{
 		printf("ERR:OOB WR %04lx\r\n",addr);
@@ -57,6 +57,7 @@ void setAddressBus(long int addr)
 			_delay_ms(100);
 		}
 	}
+	*/
 }
 
 #define ASSERT_MREQ_LOW PORTD &= ~(1 << PORTD7)
@@ -75,6 +76,9 @@ void setAddressBus(long int addr)
 
 #define ASSERT_BUSRQ_LOW PORTC &= ~(1 << PORTC5)
 #define ASSERT_BUSRQ_HIGH PORTC |= (1 << PORTC5)
+
+#define ASSERT_NMI_LOW PORTC &= ~(1 << PORTC2)
+#define ASSERT_NMI_HIGH PORTC |= (1 << PORTC2)
 
 #define ASSERT_DATABUS_INPUT DDRB = 0x00
 #define ASSERT_DATABUS_OUTPUT DDRB = 0xFF
@@ -105,9 +109,9 @@ int grabByte()
 	return (grabNibble() << 4) + grabNibble();
 }
 
-void writeAndVerify(long int addr, int bytes, const unsigned char *data)
+void writeAndVerify(unsigned char addr, int bytes, const unsigned char *data)
 {
-	unsigned long i = 0;
+	unsigned char i = 0;
 	ASSERT_DATABUS_OUTPUT;
 	ASSERT_MREQ_LOW;
 	ASSERT_RWCTRL_OUTPUT;
@@ -132,7 +136,7 @@ void writeAndVerify(long int addr, int bytes, const unsigned char *data)
 		unsigned char lol = pgm_read_byte(data + i);
 		if(dataCheck != lol)
 		{
-			printf("ERR:%04lx:EXPECTING %02x GOT %02x\r\n",i,lol,dataCheck);
+			printf("ERR:%02x:EXPECTING %02x GOT %02x\r\n",i,lol,dataCheck);
 			while(1)
 			{
 				_delay_ms(100);
@@ -322,6 +326,7 @@ int main(void)
 	// let buses become tristated
 	DDRC = ~(1 << PORTC4);
 	DDRC = ~(1 << PORTC3);
+	DDRC = ~(1 << PORTC2);
 	DDRA = 0xFF;
 	DDRB = 0xFF;
 	uart_init ();
@@ -398,7 +403,7 @@ int main(void)
 
 	sei();
 	printf("Z80 RESET\r\n");
-	DDRC = (1 << PORTC7) | (1 << PORTC5);
+	DDRC = (1 << PORTC7) | (1 << PORTC5) | (1 << PORTC2);
 	PORTC = 0xFF;
 	DDRA = 0x0;
 	PORTA = 0xFF;
