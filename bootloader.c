@@ -10,16 +10,13 @@
 #define BAUDRATE 9600 // define baud
 #define BAUD_PRESCALER ((F_CPU)/(BAUDRATE * 16UL) - 1) // set baud rate value for UBRR
 
-#define LADDR_LOW  0x00
-#define LADDR_HIGH 0x00
-#define LLEN_LOW   0x00
-#define LLEN_HIGH  0x20
-#define JMP_LOW    0x00
-#define JMP_HIGH   0x00
+#include "out_pmem.h"
+
 // CP/M Bootloader
 const unsigned char tiny_bl[] PROGMEM = {0xf3,0xc3,0x04,0x00,0x21,0x00,0x00,0x11,0x00,0x40,0x01,0x24,0x00,0xed,0xb0,0xc3,0x12,0x40,0x21,LADDR_LOW,LADDR_HIGH,0x01,LLEN_LOW,LLEN_HIGH,0xdb,0xff,0x77,0x23,0x0b,0x78,0xb1,0x20,0xf7,0xc3,JMP_LOW,JMP_HIGH};
 long int bl_ctr = 0;
-#include "out_pmem.h"
+
+#define IOTRAP_HUSH 1
 
 int bios_dsk = 0;
 int bios_trk = 0;
@@ -80,6 +77,9 @@ void setAddressBus(unsigned char addr)
 #define ASSERT_NMI_LOW PORTC &= ~(1 << PORTC2)
 #define ASSERT_NMI_HIGH PORTC |= (1 << PORTC2)
 
+#define ASSERT_MASKUART_LOW PORTC &= ~(1 << PORTC1)
+#define ASSERT_MASKUART_HIGH PORTC |= (1 << PORTC1)
+
 #define ASSERT_DATABUS_INPUT DDRB = 0x00
 #define ASSERT_DATABUS_OUTPUT DDRB = 0xFF
 
@@ -136,7 +136,7 @@ void writeAndVerify(unsigned char addr, int bytes, const unsigned char *data)
 		unsigned char lol = pgm_read_byte(data + i);
 		if(dataCheck != lol)
 		{
-			printf("ERR:%02x:EXPECTING %02x GOT %02x\r\n",i,lol,dataCheck);
+			printf("ERR:%02x:PECTING %02x GOT %02x\r\n",i,lol,dataCheck);
 			while(1)
 			{
 				_delay_ms(100);
@@ -179,30 +179,30 @@ void ioreqRead(int address)
 	*/
 	switch(address)
 	{
-		case 0x80:
-			dataBus = 0xFF;
-			/*
+		case 0x80: // TODO: patch BASIC BIOS.
 			if(receivedFlag == 0)
-			{
-				dataBus = 0xFF;
-			}
-			else
 			{
 				dataBus = 0x00;
 			}
-			*/
+			else
+			{
+				dataBus = 0xFF;
+			}
 			break;
 		case 0x81:
 			while(receivedFlag == 0)
 			{
+				#ifndef IOTRAP_HUSH
 				printf("Help, I'm trapped!\r\n");
+				#endif
 				_delay_us(25);
 			}
 			receivedFlag = 0;   // flush
 			dataBus = receivedBuffer;
 			break;
 		case 0xFE:
-			dataBus = 0xE5;
+			printf("!%02x!00!00!\r\n",0xFE); // read a byte.
+			dataBus = getchar();
 			break;
 		case 0xFF:
 			if(bl_ctr % 0x100 == 0)
@@ -239,22 +239,29 @@ void ioreqWrite(int addrBusLow, unsigned char dataBus)
 		case 0x80:
 			break;
 		case 0x81:
-			printf("%c",dataBus);
+			if(dataBus == '!')
+			{
+				printf("!!!");
+			}
+			else
+			{
+				printf("%c",dataBus);	
+			}
 			break;
 		case 0xF0:
-			printf("MON:HC02:SELDSK %02x\r\n",dataBus);
-			bios_dsk = dataBus;
+			printf("!%02x!%02x!%02x!\r\n",0xFF,0xF0,dataBus);
+			// getchar();
 			break;
 		case 0xF1:
-			printf("MON:HC02:SELTRK %02x\r\n",dataBus);
-			bios_trk = dataBus;
+			printf("!%02x!%02x!%02x!\r\n",0xFF,0xF1,dataBus);
+			// getchar();
 			break;
 		case 0xF2:
-			printf("MON:HC02:SELSEC %02x\r\n",dataBus);
-			bios_sec = dataBus;
+			printf("!%02x!%02x!%02x!\r\n",0xFF,0xF1,dataBus);
+		    // getchar();
 			break;
 		case 0xFE:
-			printf("MONITOR:DISK_WR\r\n");
+			printf("MONITOR:DISK_WR (NOT IMPL.)\r\n");
 			while(1)
 			{
 				_delay_ms(1000);
@@ -290,6 +297,7 @@ void ioreqWrite(int addrBusLow, unsigned char dataBus)
 int main(void)
 {
 	DDRD |= (1 << PORTD2) | (1 << PORTD3) | (1 << PORTD4) | (1 << PORTD5) | (1 << PORTD7);
+	DDRC = (1 << PORTC7) | (1 << PORTC5) | (1 << PORTC2) |  (1 << PORTC1);
 	// DDRD &= ~(1 << PORTD0);
 	// PORTD7 is ^MREQ (active low)
 	// PORTD6 is ^IOREQ
@@ -323,10 +331,12 @@ int main(void)
 	
 	cli();
 	
-	// let buses become tristated
+	/*
 	DDRC = ~(1 << PORTC4);
 	DDRC = ~(1 << PORTC3);
 	DDRC = ~(1 << PORTC2);
+	*/
+	ASSERT_MASKUART_LOW;
 	DDRA = 0xFF;
 	DDRB = 0xFF;
 	uart_init ();
@@ -403,7 +413,7 @@ int main(void)
 
 	sei();
 	printf("Z80 RESET\r\n");
-	DDRC = (1 << PORTC7) | (1 << PORTC5) | (1 << PORTC2);
+	
 	PORTC = 0xFF;
 	DDRA = 0x0;
 	PORTA = 0xFF;
@@ -416,12 +426,10 @@ int main(void)
 	PORTD |= (1 << PORTD4) | (1 << PORTD5) | (1 << PORTD7) | (1 << PORTD6);
 	
 	_delay_us(50);
-
 	ASSERT_BUSRQ_HIGH;
 	// ASSERT_WAIT_HIGH;
 	ASSERT_RESET_LOW;
 	unsigned char addrBusLow = 0;
-	unsigned char addrBusHigh = 0;
 	unsigned char dataBus = 0;
 	unsigned char mreqPin = 0;
 	unsigned char ioreqPin = 0;
@@ -453,13 +461,12 @@ int main(void)
 		}
 		ASSERT_CLK_HIGH;
 		unsigned char statusRegister = PIND;
+		unsigned char pincBuffer = PINC;
 		
 		_delay_us(25);
 		ioreqPin = statusRegister & (1 << PORTD6);
 		mreqPin = statusRegister & (1 << PORTD7);
 		addrBusLow = PINA;
-		unsigned char pincBuffer = PINC;
-		addrBusHigh = pincBuffer & 0b111;
 		m1Pin = pincBuffer & (1 << PORTC3);
 		dataBus = PINB;
 
@@ -487,7 +494,7 @@ int main(void)
 		{
 			if(MEM_DEBUG)
 			{
-				printf("%d %d %d : %d\r\n",mreqPin,addrBusHigh,addrBusLow,dataBus);	
+				printf("%d %d : %d\r\n",mreqPin,addrBusLow,dataBus);	
 			}
 		}
 		else if(ioreqPin == 0)
