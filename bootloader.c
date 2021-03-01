@@ -1,5 +1,7 @@
 #define F_CPU 8000000UL
 
+// #define DEBUG_MEMORY 1
+
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include <stdlib.h>
@@ -16,7 +18,7 @@
 const unsigned char tiny_bl[] PROGMEM = {0xf3,0xc3,0x04,0x00,0x21,0x00,0x00,0x11,0x00,0x40,0x01,0x24,0x00,0xed,0xb0,0xc3,0x12,0x40,0x21,LADDR_LOW,LADDR_HIGH,0x01,LLEN_LOW,LLEN_HIGH,0xdb,0xff,0x77,0x23,0x0b,0x78,0xb1,0x20,0xf7,0xc3,JMP_LOW,JMP_HIGH};
 long int bl_ctr = 0;
 
-#define IOTRAP_HUSH 1
+#define IOTRAP_HUSH 
 
 int bios_dsk = 0;
 int bios_trk = 0;
@@ -44,6 +46,9 @@ unsigned char uart_receive(void){
 
 void setAddressBus(unsigned char addr)
 {
+	#ifdef DEBUG_MEMORY
+		printf("DBG:ADDR:%02x\r\n",addr);
+	#endif
 	PORTA = addr;
 	/*
 	if((addr >> 8 & 0b111) != (addr >> 8))
@@ -63,6 +68,9 @@ void setAddressBus(unsigned char addr)
 #define ASSERT_WRITE_HIGH PORTD |= (1 << PORTD5)
 #define ASSERT_READ_LOW PORTD &= ~(1 << PORTD4)
 #define ASSERT_READ_HIGH PORTD |= (1 << PORTD4)
+
+#define ASSERT_LED_HIGH PORTC |= (1 << PORTC0)
+#define ASSERT_LED_LOW PORTC &= ~(1 << PORTC0)
 
 #define ASSERT_CLK_LOW PORTD &= ~(1 << PORTD3)
 #define ASSERT_CLK_HIGH PORTD |= (1 << PORTD3)
@@ -109,23 +117,80 @@ int grabByte()
 	return (grabNibble() << 4) + grabNibble();
 }
 
+void writeAndVerifyPattern(unsigned char addr, int byteCount)
+{
+	printf("DBG:PATTERN\r\n");
+	unsigned char i = 0;
+	unsigned char tempByte;
+	ASSERT_DATABUS_OUTPUT;
+	ASSERT_MREQ_LOW;
+	ASSERT_RWCTRL_OUTPUT;
+	for(i = addr;i < byteCount;i++)
+	{
+		setAddressBus(i);
+		tempByte = byteCount % 255;
+		PORTB = tempByte;
+		#ifdef DEBUG_MEMORY
+		printf("DBG:DATA:%02x\r\n",tempByte);
+		#endif
+		ASSERT_WRITE_LOW;
+		_delay_us(25);
+		ASSERT_WRITE_HIGH;
+	}
+	PORTB = 0x00;
+	ASSERT_DATABUS_INPUT;
+	unsigned char failMemCheck = 0;
+	
+	unsigned char dataCheck = 0;
+	for(i =addr;i < byteCount;i++)
+	{
+		setAddressBus(i);
+		ASSERT_READ_LOW;
+		_delay_us(25);
+		dataCheck = PINB;
+		ASSERT_READ_HIGH;
+		unsigned char lol = byteCount % 255;
+		if(dataCheck != lol)
+		{
+			printf("ERR:%02x:EXPECT %02x GOT %02x\r\n",i,lol,dataCheck);
+			failMemCheck = 1;
+		}
+	}
+	if(failMemCheck == 1)
+	{
+		while(1)
+		{
+			_delay_ms(100);
+		}
+	}
+	ASSERT_MREQ_HIGH;
+	ASSERT_RWCTRL_INPUT;
+}
+
 void writeAndVerify(unsigned char addr, int bytes, const unsigned char *data)
 {
 	unsigned char i = 0;
+	unsigned char tempByte;
 	ASSERT_DATABUS_OUTPUT;
 	ASSERT_MREQ_LOW;
 	ASSERT_RWCTRL_OUTPUT;
 	for(i = addr;i < bytes;i++)
 	{
 		setAddressBus(i);
-		PORTB = pgm_read_byte(data + i);
+		tempByte = pgm_read_byte(data + i);
+		PORTB = tempByte;
+		#ifdef DEBUG_MEMORY
+		printf("DBG:DATA:%02x\r\n",tempByte);
+		#endif
 		ASSERT_WRITE_LOW;
 		_delay_us(25);
 		ASSERT_WRITE_HIGH;
 	}
+	PORTB = 0x00;
 	ASSERT_DATABUS_INPUT;
+	unsigned char failMemCheck = 0;
 	
-	unsigned char dataCheck;
+	unsigned char dataCheck = 0;
 	for(i =addr;i < bytes;i++)
 	{
 		setAddressBus(i);
@@ -136,11 +201,15 @@ void writeAndVerify(unsigned char addr, int bytes, const unsigned char *data)
 		unsigned char lol = pgm_read_byte(data + i);
 		if(dataCheck != lol)
 		{
-			printf("ERR:%02x:PECTING %02x GOT %02x\r\n",i,lol,dataCheck);
-			while(1)
-			{
-				_delay_ms(100);
-			}
+			printf("ERR:%02x:EXPECT %02x GOT %02x\r\n",i,lol,dataCheck);
+			failMemCheck = 1;
+		}
+	}
+	if(failMemCheck == 1)
+	{
+		while(1)
+		{
+			_delay_ms(100);
 		}
 	}
 	ASSERT_MREQ_HIGH;
@@ -174,20 +243,24 @@ void ioreqRead(int address)
 	/*
 	if(address != 0xFF && address != 0xFE)
 	{
-		printf("IOREQ READ:%d\r\n",address);		
+		printf("IOREQ READ:%x\r\n",address);		
 	}
 	*/
 	switch(address)
 	{
-		case 0x80: // TODO: patch BASIC BIOS.
-			if(receivedFlag == 0)
-			{
-				dataBus = 0x00;
-			}
-			else
-			{
+		case 0x80:
+			#ifdef USE_BASIC
 				dataBus = 0xFF;
-			}
+			#else
+				if(receivedFlag == 0)
+				{
+					dataBus = 0x00;
+				}
+				else
+				{
+					dataBus = 0xFF;
+				}
+			#endif
 			break;
 		case 0x81:
 			while(receivedFlag == 0)
@@ -197,12 +270,16 @@ void ioreqRead(int address)
 				#endif
 				_delay_us(25);
 			}
-			receivedFlag = 0;   // flush
+			receivedFlag = 0;
 			dataBus = receivedBuffer;
 			break;
 		case 0xFE:
-			printf("!%02x!00!00!\r\n",0xFE); // read a byte.
-			dataBus = getchar();
+			#ifdef USE_BASIC
+				dataBus = 0xE5;
+			#else
+				printf("!%02x!00!00!\r\n",0xFE); // read a byte.
+				dataBus = getchar();
+			#endif
 			break;
 		case 0xFF:
 			if(bl_ctr % 0x100 == 0)
@@ -297,7 +374,7 @@ void ioreqWrite(int addrBusLow, unsigned char dataBus)
 int main(void)
 {
 	DDRD |= (1 << PORTD2) | (1 << PORTD3) | (1 << PORTD4) | (1 << PORTD5) | (1 << PORTD7);
-	DDRC = (1 << PORTC7) | (1 << PORTC5) | (1 << PORTC2) |  (1 << PORTC1);
+	DDRC = (1 << PORTC7) | (1 << PORTC5) | (1 << PORTC2) |  (1 << PORTC1) | (1 << PORTC0);
 	// DDRD &= ~(1 << PORTD0);
 	// PORTD7 is ^MREQ (active low)
 	// PORTD6 is ^IOREQ
@@ -307,6 +384,7 @@ int main(void)
 	// PORTD2 is ^RESET (active low)
 	// PORTD3 is CLK
 	
+	// PORT C0 is LED
 	// PORT C3 is M1. (input to atmega, active low - used for interrupt acknowledge.)
 	// PORT C6 is WAIT (output to z80, active low)
 	// PORT C5 is BUSRQ (output to z80, active low)
@@ -317,6 +395,10 @@ int main(void)
 	ASSERT_BUSRQ_LOW;
 	ASSERT_INT_HIGH;
 	ASSERT_RESET_LOW;
+	_delay_us(25);
+	ASSERT_CLK_HIGH;
+	_delay_us(25);
+	ASSERT_CLK_LOW;
 	_delay_us(25);
 	ASSERT_CLK_HIGH;
 	_delay_us(25);
@@ -353,6 +435,7 @@ int main(void)
 	
 	if(LOAD_STATIC_PROGRAM)
 	{
+		writeAndVerifyPattern(0,0xFE);
 		printf("Z80 BOOTLOADER WR\r\n");
 		writeAndVerify(0,sizeof(tiny_bl),tiny_bl);
 	}
@@ -412,6 +495,8 @@ int main(void)
 	printf("INT ENABLE\r\n");
 
 	sei();
+	// set the bus to 0.
+	setAddressBus(0);
 	printf("Z80 RESET\r\n");
 	
 	PORTC = 0xFF;
