@@ -85,9 +85,6 @@ void setAddressBus(unsigned char addr)
 #define ASSERT_NMI_LOW PORTC &= ~(1 << PORTC2)
 #define ASSERT_NMI_HIGH PORTC |= (1 << PORTC2)
 
-#define ASSERT_MASKUART_LOW PORTC &= ~(1 << PORTC1)
-#define ASSERT_MASKUART_HIGH PORTC |= (1 << PORTC1)
-
 #define ASSERT_DATABUS_INPUT DDRB = 0x00
 #define ASSERT_DATABUS_OUTPUT DDRB = 0xFF
 
@@ -239,6 +236,7 @@ void ioreqClockPulse()
 
 void ioreqRead(int address)
 {
+	unsigned char controlBus = 0;
 	unsigned char dataBus = 0;
 	/*
 	if(address != 0xFF && address != 0xFE)
@@ -261,6 +259,7 @@ void ioreqRead(int address)
 					dataBus = 0xFF;
 				}
 			#endif
+			controlBus = 1;
 			break;
 		case 0x81:
 			while(receivedFlag == 0)
@@ -272,6 +271,7 @@ void ioreqRead(int address)
 			}
 			receivedFlag = 0;
 			dataBus = receivedBuffer;
+			controlBus = 1;
 			break;
 		case 0xFE:
 			#ifdef USE_BASIC
@@ -280,6 +280,7 @@ void ioreqRead(int address)
 				printf("!%02x!00!00!\r\n",0xFE); // read a byte.
 				dataBus = getchar();
 			#endif
+			controlBus = 1;
 			break;
 		case 0xFF:
 			if(bl_ctr % 0x100 == 0)
@@ -296,16 +297,30 @@ void ioreqRead(int address)
 				dataBus = pgm_read_byte(bl_rom + bl_ctr);
 			}
 			bl_ctr += 1;
+			controlBus = 1;
 			break;
 		default:
 			printf("IOREQ?RD %02x\r\n",address);
 			dataBus = 0;
+			controlBus = 0;
 			break;
 	}
-	DDRB = 0xFF;
-	PORTB = dataBus;
-	ioreqClockPulse();
-	DDRB = 0x0;
+	// if we know the interrupt.
+	if(controlBus == 1)
+	{
+		DDRB = 0xFF;
+		PORTB = dataBus;
+		ioreqClockPulse();
+		DDRB = 0x0;
+	}
+	else
+	{
+		DDRB = 0x0;
+		// PINC1 indicates that something else has put data on the bus
+		// provide a signal that it's OK.
+		while((PINC & (1 << PINC1)) == 0){};
+		ioreqClockPulse();
+	}
 }
 
 void ioreqWrite(int addrBusLow, unsigned char dataBus)
@@ -374,7 +389,7 @@ void ioreqWrite(int addrBusLow, unsigned char dataBus)
 int main(void)
 {
 	DDRD |= (1 << PORTD2) | (1 << PORTD3) | (1 << PORTD4) | (1 << PORTD5) | (1 << PORTD7);
-	DDRC = (1 << PORTC7) | (1 << PORTC5) | (1 << PORTC2) |  (1 << PORTC1) | (1 << PORTC0);
+	DDRC = (1 << PORTC7) | (1 << PORTC5) | (1 << PORTC2) | (1 << PORTC0);
 	// DDRD &= ~(1 << PORTD0);
 	// PORTD7 is ^MREQ (active low)
 	// PORTD6 is ^IOREQ
@@ -418,7 +433,6 @@ int main(void)
 	DDRC = ~(1 << PORTC3);
 	DDRC = ~(1 << PORTC2);
 	*/
-	ASSERT_MASKUART_LOW;
 	DDRA = 0xFF;
 	DDRB = 0xFF;
 	uart_init ();
@@ -551,6 +565,7 @@ int main(void)
 		_delay_us(25);
 		ioreqPin = statusRegister & (1 << PORTD6);
 		mreqPin = statusRegister & (1 << PORTD7);
+		
 		addrBusLow = PINA;
 		m1Pin = pincBuffer & (1 << PORTC3);
 		dataBus = PINB;
