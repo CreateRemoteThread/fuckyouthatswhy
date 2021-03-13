@@ -9,10 +9,12 @@
 #include <util/delay.h>
 #include <avr/pgmspace.h>
 
+
 #define BAUDRATE 9600 // define baud
 #define BAUD_PRESCALER ((F_CPU)/(BAUDRATE * 16UL) - 1) // set baud rate value for UBRR
 
 #include "out_pmem.h"
+#include "disk_emu.h"
 
 // CP/M Bootloader
 const unsigned char tiny_bl[] PROGMEM = {0xf3,0xc3,0x04,0x00,0x21,0x00,0x00,0x11,0x00,0x40,0x01,0x24,0x00,0xed,0xb0,0xc3,0x12,0x40,0x21,LADDR_LOW,LADDR_HIGH,0x01,LLEN_LOW,LLEN_HIGH,0xdb,0xff,0x77,0x23,0x0b,0x78,0xb1,0x20,0xf7,0xc3,JMP_LOW,JMP_HIGH};
@@ -28,7 +30,7 @@ void uart_init (void)
 {
 	UBRRH = (uint8_t)(BAUD_PRESCALER>>8);
 	UBRRL = (uint8_t)(BAUD_PRESCALER);
-	UCSRB = (1<<RXEN)|(1<<TXEN)|(1 << RXCIE);
+	UCSRB = (1<<RXEN)|(1<<TXEN)|(1<<RXCIE);
 	UCSRC = (1<<UCSZ0)|(1<<UCSZ1)|(1<<URSEL);
 }
 
@@ -114,6 +116,7 @@ int grabByte()
 	return (grabNibble() << 4) + grabNibble();
 }
 
+
 void writeAndVerifyPattern(unsigned char addr, int byteCount)
 {
 	printf("DBG:PATTERN\r\n");
@@ -131,7 +134,7 @@ void writeAndVerifyPattern(unsigned char addr, int byteCount)
 		printf("DBG:DATA:%02x\r\n",tempByte);
 		#endif
 		ASSERT_WRITE_LOW;
-		_delay_us(25);
+		_delay_us(50);
 		ASSERT_WRITE_HIGH;
 	}
 	PORTB = 0x00;
@@ -143,7 +146,7 @@ void writeAndVerifyPattern(unsigned char addr, int byteCount)
 	{
 		setAddressBus(i);
 		ASSERT_READ_LOW;
-		_delay_us(25);
+		_delay_us(50);
 		dataCheck = PINB;
 		ASSERT_READ_HIGH;
 		unsigned char lol = byteCount % 255;
@@ -238,25 +241,20 @@ void ioreqRead(int address)
 {
 	unsigned char controlBus = 0;
 	unsigned char dataBus = 0;
-	/*
-	if(address != 0xFF && address != 0xFE)
-	{
-		printf("IOREQ READ:%x\r\n",address);		
-	}
-	*/
 	switch(address)
 	{
 		case 0x80:
 			#ifdef USE_BASIC
 				dataBus = 0xFF;
-			#else
+			#endif
+			#ifdef USE_CPM2
 				if(receivedFlag == 0)
 				{
 					dataBus = 0x00;
 				}
 				else
 				{
-					dataBus = 0xFF;
+					dataBus = 0x02 | 0x04;
 				}
 			#endif
 			controlBus = 1;
@@ -276,9 +274,16 @@ void ioreqRead(int address)
 		case 0xFE:
 			#ifdef USE_BASIC
 				dataBus = 0xE5;
-			#else
-				printf("!%02x!00!00!\r\n",0xFE); // read a byte.
-				dataBus = getchar();
+			#endif
+			#ifdef USE_CPM2
+			/*
+				printf("Fetch disk\r\n");
+				while(1)
+				{
+					_delay_ms(1000);
+				}
+				*/
+				dataBus = 0xE5;
 			#endif
 			controlBus = 1;
 			break;
@@ -331,26 +336,19 @@ void ioreqWrite(int addrBusLow, unsigned char dataBus)
 		case 0x80:
 			break;
 		case 0x81:
-			if(dataBus == '!')
-			{
-				printf("!!!");
-			}
-			else
-			{
-				printf("%c",dataBus);	
-			}
+			printf("%c",dataBus);	
 			break;
 		case 0xF0:
-			printf("!%02x!%02x!%02x!\r\n",0xFF,0xF0,dataBus);
-			// getchar();
+			bios_dsk = dataBus;
+			printf("Setting disk to %02x\r\n",bios_dsk);
 			break;
 		case 0xF1:
-			printf("!%02x!%02x!%02x!\r\n",0xFF,0xF1,dataBus);
-			// getchar();
+			bios_trk = dataBus;
+			printf("Setting track to %02x\r\n",bios_trk);
 			break;
 		case 0xF2:
-			printf("!%02x!%02x!%02x!\r\n",0xFF,0xF1,dataBus);
-		    // getchar();
+			bios_sec = dataBus;
+			printf("Setting sector to %02x\r\n",bios_sec);
 			break;
 		case 0xFE:
 			printf("MONITOR:DISK_WR (NOT IMPL.)\r\n");
@@ -407,9 +405,9 @@ int main(void)
 	// PORT C7 is INT (output to z80, active low)
 	// PORTA is LOW address
 	// PORTC is HIGH address
+	ASSERT_RESET_LOW;
 	ASSERT_BUSRQ_LOW;
 	ASSERT_INT_HIGH;
-	ASSERT_RESET_LOW;
 	_delay_us(25);
 	ASSERT_CLK_HIGH;
 	_delay_us(25);
@@ -513,9 +511,10 @@ int main(void)
 	setAddressBus(0);
 	printf("Z80 RESET\r\n");
 	
-	PORTC = 0xFF;
+	
+	// PORTC = 0xFF;
 	DDRA = 0x0;
-	PORTA = 0xFF;
+	// PORTA = 0xFF;
 	DDRB = 0x0;
 	
 	DDRD &= ~(1 << PORTD4); // READ
@@ -527,7 +526,7 @@ int main(void)
 	_delay_us(50);
 	ASSERT_BUSRQ_HIGH;
 	// ASSERT_WAIT_HIGH;
-	ASSERT_RESET_LOW;
+	// ASSERT_RESET_LOW;
 	unsigned char addrBusLow = 0;
 	unsigned char dataBus = 0;
 	unsigned char mreqPin = 0;
@@ -540,6 +539,7 @@ int main(void)
 		ASSERT_CLK_LOW;
 		_delay_ms(25);
 	}
+	_delay_ms(10);
 	ASSERT_RESET_HIGH;
 	printf("Z80 GO\r\n");
 	
@@ -618,6 +618,8 @@ ISR(USART_RXC_vect)
 {
 	interruptFlag = 23;
 	interruptVector = 4;
+	// signal the received flag.
 	receivedFlag = 1;
-	receivedBuffer = UDR; // Fetch the received byte value into the variable "ByteReceived"
+	receivedBuffer = UDR;
+	// printf("%c\r\n",receivedBuffer);
 }

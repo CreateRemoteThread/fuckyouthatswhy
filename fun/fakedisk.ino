@@ -1,3 +1,7 @@
+/*
+ DEPRECATED - FOR REFERENCE ONLY
+*/
+
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <FS.h>

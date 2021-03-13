@@ -1,7 +1,17 @@
 #ifndef OUT_PMEM_H_
 #define OUT_PMEM_H_
 
-#define USE_BASIC
+#define USE_CPM2
+
+#ifdef USE_TEST
+#define LADDR_LOW 0x00
+#define LADDR_HIGH 0x00
+#define LLEN_LOW 0x08
+#define LLEN_HIGH 0x00
+#define JMP_LOW 0x00
+#define JMP_HIGH 0x00
+const unsigned char bl_rom[] PROGMEM = {0x02,0x3e,0x90,0xd3,0x18,0x76,0xfd,0x00};
+#endif
 
 #ifdef USE_BASIC
 #define LADDR_LOW  0x00
